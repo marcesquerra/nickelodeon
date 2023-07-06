@@ -24,6 +24,7 @@ in
       nickel.packages.${system}.default
       nickel.packages.${system}.lsp-nls
       topiary.packages.${system}.default
+      packages.python311Packages.grip
     ];
     shellHook = ''
       export RUST_SRC_PATH="${rust-src}/lib/rustlib/src/rust/library"
