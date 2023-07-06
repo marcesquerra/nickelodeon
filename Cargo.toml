@@ -2,6 +2,15 @@
 name = "nickelodeon"
 version = "0.0.1"
 edition = "2021"
+license = "MIT"
+description = "A library to help your CLI be configured with Nickel"
+homepage = "https://github.com/marcesquerra/nickelodeon"
+repository = "https://github.com/marcesquerra/nickelodeon"
+exclude = [
+  "nix/*",
+  ".envrc",
+  "shell.nix"
+]
 
 [dependencies]
 config-finder = "0.1.2"
