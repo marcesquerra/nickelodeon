@@ -15,5 +15,6 @@
 [![Crates.io](https://img.shields.io/crates/d/nickelodeon?style=flat-square)](https://crates.io/crates/nickelodeon)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/marcesquerra/nickelodeon/rust.yml?branch=main&style=flat-square)](https://github.com/marcesquerra/nickelodeon/actions/workflows/rust.yml?query=branch%3Amain)
+[![Codecov.io](https://codecov.io/gh/marcesquerra/nickelodeon/branch/main/graph/badge.svg?token=13F273ZAWO)](https://codecov.io/gh/marcesquerra/nickelodeon)
 
 Licensed under [MIT](LICENSE).
