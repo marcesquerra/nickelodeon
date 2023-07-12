@@ -6,6 +6,8 @@ license = "MIT"
 description = "A library to help your CLI be configured with Nickel"
 homepage = "https://github.com/marcesquerra/nickelodeon"
 repository = "https://github.com/marcesquerra/nickelodeon"
+keywords = ["nickel", "config", "configuration", "cli"]
+categories = ["command-line-interface", "config", "filesystem"]
 exclude = [
   "nix/*",
   ".envrc",
