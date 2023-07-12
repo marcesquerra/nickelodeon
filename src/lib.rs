@@ -16,6 +16,7 @@ use nickel_lang_core::eval::cache::CacheImpl;
 use nickel_lang_core::program::Program;
 use nickel_lang_core::term::RichTerm;
 use serde::Deserialize;
+use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -71,24 +72,15 @@ fn expand_path_and_names(app: &str, pb0: &Path) -> Vec<PathBuf> {
     expand_names(pb1)
 }
 
-/// Goes through all the locations that the configuration file for an app
-/// with the codename [`app`] could be located and return the full path of
-/// the first one that actually exist and is a file
-fn first_existing_config(app: &str) -> Option<PathBuf> {
-    first_existing_config_impl(|pb| pb.is_file(), app)
+fn all_location_candidates(app: &str) -> Vec<PathBuf> {
+    all_location_candidates_impl(std::env::current_dir, app)
 }
 
-/// Goes through all the locations that the configuration file for an app
-/// with the codename [`app`] could be located and return the full path of
-/// the first one that actually exist and is a file.
-///
-/// This implementation uses the `P` predicate to decide if a path exists.
-/// This approach is used to facilitate testing.
-fn first_existing_config_impl<P>(p: P, app: &str) -> Option<PathBuf>
+fn all_location_candidates_impl<F>(pwd: F, app: &str) -> Vec<PathBuf>
 where
-    P: FnMut(&PathBuf) -> bool,
+    F: Fn() -> io::Result<PathBuf>,
 {
-    let mut buffer: Vec<PathBuf> = std::env::current_dir().map_or_else(
+    let mut buffer: Vec<PathBuf> = pwd().map_or_else(
         |_| Vec::new(),
         |mut pwd_base| {
             pwd_base.push(format!(".{app}"));
@@ -105,7 +97,27 @@ where
             .collect(),
     );
 
-    buffer.into_iter().find(p)
+    buffer
+}
+
+/// Goes through all the locations that the configuration file for an app
+/// with the codename [`app`] could be located and return the full path of
+/// the first one that actually exist and is a file
+fn first_existing_config(app: &str) -> Option<PathBuf> {
+    first_existing_config_impl(|pb| pb.is_file(), all_location_candidates(app))
+}
+
+/// Goes through all the locations that the configuration file for an app
+/// with the codename [`app`] could be located and return the full path of
+/// the first one that actually exist and is a file.
+///
+/// This implementation uses the `P` predicate to decide if a path exists.
+/// This approach is used to facilitate testing.
+fn first_existing_config_impl<P>(is_file: P, candidates: Vec<PathBuf>) -> Option<PathBuf>
+where
+    P: FnMut(&PathBuf) -> bool,
+{
+    candidates.into_iter().find(is_file)
 }
 
 /// Loads, evaluates and deserializes the data in the file located at [`path`].
@@ -193,6 +205,35 @@ mod tests {
             let expected: Vec<PathBuf> =
                 vec![PathBuf::from("config.ncl"), PathBuf::from("config.nickel")];
             assert_eq!(result, expected);
+        }
+    }
+
+    #[cfg(test)]
+    mod first_existing_config {
+        use super::super::first_existing_config;
+        use super::super::first_existing_config_impl;
+        use std::path::PathBuf;
+
+        #[test]
+        fn nothing_found() {
+            let result = first_existing_config("this_app_does_not_exist");
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn one_file_exists() {
+            fn is_file(path: &PathBuf) -> bool {
+                path.as_os_str().to_string_lossy().ends_with("_file")
+            }
+
+            let candidates = vec![
+                PathBuf::from("file_is_not"),
+                PathBuf::from("the_actual_file"),
+            ];
+
+            let result = first_existing_config_impl(is_file, candidates);
+
+            assert_eq!(result, Some(PathBuf::from("the_actual_file")));
         }
     }
 }
