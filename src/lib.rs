@@ -91,6 +91,7 @@ where
     buffer.append(
         &mut ConfigDirs::empty()
             .add_platform_config_dir()
+            .add_root_etc()
             .paths()
             .iter()
             .flat_map(|pb0| expand_path_and_names(app, pb0))
@@ -139,6 +140,9 @@ fn load<'de, T: Deserialize<'de>>(path: PathBuf) -> Result<T> {
 
 #[cfg(test)]
 mod tests {
+
+    use serde::Deserialize;
+    use serde::Serialize;
 
     #[cfg(test)]
     mod expand_names {
@@ -235,5 +239,146 @@ mod tests {
 
             assert_eq!(result, Some(PathBuf::from("the_actual_file")));
         }
+
+        #[test]
+        fn first_file_found() {
+            fn is_file(path: &PathBuf) -> bool {
+                path.as_os_str().to_string_lossy().ends_with("_file")
+            }
+
+            let candidates = vec![
+                PathBuf::from("file_is_not"),
+                PathBuf::from("the_actual_file"),
+                PathBuf::from("not_the_first_file"),
+            ];
+
+            let result = first_existing_config_impl(is_file, candidates);
+
+            assert_eq!(result, Some(PathBuf::from("the_actual_file")));
+        }
+    }
+
+    #[cfg(test)]
+    mod all_location_candidates {
+        use super::super::all_location_candidates;
+        use super::super::all_location_candidates_impl;
+        use std::io;
+        use std::path::PathBuf;
+
+        #[test]
+        fn works() {
+            if cfg!(windows) {
+                // The logic that depends on the underlaying platform is implemented by
+                // the [`config_finder`] crate, making the logic in [`nickelodeon`] platform
+                // independent. On the other hand, testing this for Windows is difficult
+                // and, if the tests pass on linux, unnecesary
+                panic!("This test was not intended to run in Windows")
+            }
+            std::env::set_var("HOME", "/home/testuser");
+            std::env::remove_var("XDG_CONFIG_HOME");
+            fn pwd_mock() -> io::Result<PathBuf> {
+                Ok(PathBuf::from("/projects/project_folder"))
+            }
+            let result = all_location_candidates_impl(pwd_mock, "some_app");
+            let expected = vec![
+                PathBuf::from("/projects/project_folder/.some_app/config.ncl"),
+                PathBuf::from("/projects/project_folder/.some_app/config.nickel"),
+                PathBuf::from("/home/testuser/.config/some_app/config.ncl"),
+                PathBuf::from("/home/testuser/.config/some_app/config.nickel"),
+                PathBuf::from("/etc/some_app/config.ncl"),
+                PathBuf::from("/etc/some_app/config.nickel"),
+            ];
+            assert_eq!(result, expected);
+        }
+
+        #[test]
+        fn wired_correctly() {
+            std::env::set_var("HOME", "/home/testuser");
+            std::env::remove_var("XDG_CONFIG_HOME");
+            let result = all_location_candidates("some_app");
+            let expected = 6;
+            assert_eq!(result.len(), expected);
+        }
+    }
+
+    #[cfg(test)]
+    mod load {
+        use crate::tests::TestConfiguration;
+
+        use super::super::load;
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        #[test]
+        fn happy() {
+            let mut ntf = NamedTempFile::new().unwrap();
+            ntf.write_fmt(format_args!(
+                "{}",
+                r#"
+                    {
+                      test_value = "nick",
+                    }
+                "#,
+            ))
+            .unwrap();
+
+            let result: TestConfiguration = load(ntf.path().to_path_buf()).unwrap();
+            let expected = TestConfiguration {
+                test_value: "nick".to_string(),
+            };
+
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[cfg(test)]
+    mod load_configuration {
+        use crate::tests::TestConfiguration;
+
+        use super::super::load_configuration;
+        use std::fs::{create_dir_all, File};
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        #[test]
+        fn happy() {
+            if cfg!(windows) {
+                // The logic that depends on the underlaying platform is implemented by
+                // the [`config_finder`] crate, making the logic in [`nickelodeon`] platform
+                // independent. On the other hand, testing this for Windows is difficult
+                // and, if the tests pass on linux, unnecesary
+                panic!("This test was not intended to run in Windows")
+            }
+
+            let home_config_dir = tempdir().unwrap();
+            let home_config_path = home_config_dir.path();
+            let config_dir_path = home_config_path.join("some_app");
+            create_dir_all(config_dir_path.clone()).unwrap();
+            let config_file_path = config_dir_path.join("config.ncl");
+            let mut conf_file = File::create(config_file_path).unwrap();
+            conf_file
+                .write_fmt(format_args!(
+                    "{}",
+                    r##"
+                        {
+                          test_value = "nick",
+                        }
+                    "##
+                ))
+                .unwrap();
+            std::env::set_var("XDG_CONFIG_HOME", home_config_path.to_str().unwrap());
+
+            let result: TestConfiguration = load_configuration("some_app", None).unwrap();
+            let expected = TestConfiguration {
+                test_value: "nick".to_string(),
+            };
+
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Default, PartialEq)]
+    struct TestConfiguration {
+        pub test_value: String,
     }
 }
