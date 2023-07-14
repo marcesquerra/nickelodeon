@@ -12,6 +12,7 @@
 #![allow(clippy::question_mark_used)]
 
 use config_finder::ConfigDirs;
+use nickel_lang_core::error::EvalError;
 use nickel_lang_core::eval::cache::CacheImpl;
 use nickel_lang_core::program::Program;
 use nickel_lang_core::term::RichTerm;
@@ -27,10 +28,10 @@ use std::path::PathBuf;
 pub fn load_configuration<'de, T: Deserialize<'de> + Default>(
     app: &str,
     config_path_from_flag: Option<PathBuf>,
-) -> Result<T> {
+) -> T {
     config_path_from_flag
         .or_else(|| first_existing_config(app))
-        .map_or_else(|| Ok(T::default()), |path| load(path))
+        .map_or_else(|| T::default(), |path| load(path))
 }
 
 /// A specialized [`Result`] type for nickelodeon operations.
@@ -122,20 +123,31 @@ where
 }
 
 /// Loads, evaluates and deserializes the data in the file located at [`path`].
-///
-/// # Errors
-///
-/// Will return `Err` if the file can't be read, evaluated or if it doesn't match
-/// the deserialization contract for `T`
-fn load<'de, T: Deserialize<'de>>(path: PathBuf) -> Result<T> {
+fn load<'de, T: Deserialize<'de>>(path: PathBuf) -> T {
     let mut program: Program<CacheImpl> = Program::new_from_file(path, std::io::stderr())
-        .map_err(|e| Error::ConfigFileReadingError(e.to_string()))?;
+        .unwrap_or_else(|err| {
+            eprintln!("Error when reading input: {err}");
+            std::process::exit(1)
+        });
+
     let rt: RichTerm = program
         .eval_full_for_export()
         .map(RichTerm::from)
-        .map_err(Error::NickelEvaluationError)?;
+        .unwrap_or_else(|err| {
+            program.report(err);
+            std::process::exit(2)
+        });
 
-    T::deserialize(rt).map_err(Error::RustDeserializationError)
+    let pos = rt.pos.clone();
+
+    T::deserialize(rt).unwrap_or_else(|err| {
+        program.report(EvalError::DeserializationError(
+            String::from("nickel"),
+            format!("{err}"),
+            pos,
+        ));
+        std::process::exit(3)
+    })
 }
 
 #[cfg(test)]
@@ -322,7 +334,7 @@ mod tests {
             ))
             .unwrap();
 
-            let result: TestConfiguration = load(ntf.path().to_path_buf()).unwrap();
+            let result: TestConfiguration = load(ntf.path().to_path_buf());
             let expected = TestConfiguration {
                 test_value: "nick".to_string(),
             };
@@ -368,7 +380,7 @@ mod tests {
                 .unwrap();
             std::env::set_var("XDG_CONFIG_HOME", home_config_path.to_str().unwrap());
 
-            let result: TestConfiguration = load_configuration("some_app", None).unwrap();
+            let result: TestConfiguration = load_configuration("some_app", None);
             let expected = TestConfiguration {
                 test_value: "nick".to_string(),
             };
